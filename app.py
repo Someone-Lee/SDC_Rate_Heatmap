@@ -13,7 +13,6 @@ st.sidebar.header("📁 1. 上传数据文件")
 uploaded_file = st.sidebar.file_uploader("请上传 data.xlsx", type=["xlsx", "xls"])
 
 st.sidebar.header("⚙️ 2. 调节步长")
-# 修改了文字描述，将 10V 改为 10%
 v_step = st.sidebar.slider("SDC Rate 步长 (<10% 区间)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
 t_step = st.sidebar.slider("Time interval 步长", min_value=1.0, max_value=50.0, value=10.0, step=1.0)
 
@@ -27,34 +26,31 @@ if uploaded_file is not None:
     t_min, t_max = df['Time interval'].min(), df['Time interval'].max()
 
     # ==========================================
-    # 【核心修改】：SDC Rate 区间生成算法 (%)
+    # SDC Rate 区间生成算法 (%) - 保留固定步长逻辑
     # ==========================================
-    v_bins_list = [v_min] # 确保以真实最小值开头
+    v_bins_list = [v_min] 
     
     # 1. 小于 10% 的部分，受滑动条动态控制
     if v_min < 10.0:
         fine_bins = np.arange(v_min, 10.0, v_step).tolist()
         v_bins_list.extend(fine_bins)
         
-    # 2. 10% 以上的部分，严格按照用户指定的固定区间
+    # 2. 10% 以上的部分，严格按照固定区间
     fixed_bounds = [10.0, 15.0, 20.0, 30.0, 40.0]
     
-    # 防御性编程：如果数据中有大于 40% 的极值，按 10 的步长自动向后延伸
     if v_max > 40.0:
         curr_bound = 50.0
         while curr_bound <= v_max + 10.0:
             fixed_bounds.append(curr_bound)
             curr_bound += 10.0
             
-    # 将符合条件的固定边界加入列表
     for b in fixed_bounds:
         if b > v_min:
             v_bins_list.append(b)
             
-    # 去重并排序，生成最终的 SDC Rate 切割点
     v_bins = sorted(list(set(np.round(v_bins_list, 5))))
 
-    # --- 时间区间（向上取整） ---
+    # --- 时间区间（向下取整起点） ---
     t_start = np.floor(t_min)
     t_end = np.ceil(t_max)
     t_bins = np.arange(t_start, t_end + t_step, t_step)
@@ -83,10 +79,12 @@ if uploaded_file is not None:
                 if pd.isna(val): val = 0
                 pct = (val / total_count) * 100 if total_count > 0 else 0
                 
-                cell_text = "" if val == 0 else f"<span style='font-size:16px'><b>{int(val)}</b></span><br><span style='font-size:12px'>({pct:.1f}%)</span>"
+                # --- 字体重叠优化 ---
+                # 将数字和百分比放在同一行，并稍微调小字体大小
+                cell_text = "" if val == 0 else f"<span style='font-size:14px'><b>{int(val)} ({pct:.1f}%)</b></span>"
                 text_row.append(cell_text)
                 
-                # 悬浮提示文案修改，去除 V 改为 %
+                # 悬浮提示文案修改
                 hover_row.append(f"<b>SDC Rate (%):</b> {y_labels[i]}<br><b>Time:</b> {x_labels[j]}<br><b>Count:</b> {int(val)} ({pct:.1f}%)")
                 
                 color_matrix[i, j] = 0 if (i == rows - 1 or j == cols - 1) else val
@@ -105,7 +103,7 @@ if uploaded_file is not None:
 
         fig.update_layout(
             xaxis_title="<b>Time Interval (s)</b>", 
-            yaxis_title="<b>SDC Rate (%)</b>",  # Y轴标题修改为 %
+            yaxis_title="<b>SDC Rate (%)</b>",  # Y轴标题保持 % 描述
             xaxis=dict(tickangle=-45, tickfont=dict(size=13)), 
             yaxis=dict(tickfont=dict(size=13)),                
             height=750, 
