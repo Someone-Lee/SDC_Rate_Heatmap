@@ -102,7 +102,7 @@ if uploaded_file is not None:
         ))
 
         fig.update_layout(
-            xaxis_title="<b>Time Interval (s)</b>", 
+            xaxis_title="<b>Time Interval (day)</b>", 
             yaxis_title="<b>SDC Rate (%)</b>",  # Y轴标题保持 % 描述
             xaxis=dict(tickangle=-45, tickfont=dict(size=13)), 
             yaxis=dict(tickfont=dict(size=13)),                
