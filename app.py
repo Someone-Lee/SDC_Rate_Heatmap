@@ -13,12 +13,12 @@ st.sidebar.header("📁 1. 上传数据文件")
 uploaded_file = st.sidebar.file_uploader("请上传 data.xlsx", type=["xlsx", "xls"])
 
 st.sidebar.header("⚙️ 2. 调节步长")
-v_step = st.sidebar.slider("SDC Rate 步长 (仅限 <10V 区间)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
+# 修改了文字描述，将 10V 改为 10%
+v_step = st.sidebar.slider("SDC Rate 步长 (<10% 区间)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
 t_step = st.sidebar.slider("Time interval 步长", min_value=1.0, max_value=50.0, value=10.0, step=1.0)
 
-# 3. 核心计算与绘图逻辑 (只有上传了文件才会执行)
+# 3. 核心计算与绘图逻辑
 if uploaded_file is not None:
-    # 读取数据
     df = pd.read_excel(uploaded_file, usecols=[0, 1], names=['Time interval', 'SDC Rate'], header=0)
     df = df.dropna(subset=['Time interval', 'SDC Rate'])
     total_count = len(df)
@@ -26,27 +26,40 @@ if uploaded_file is not None:
     v_min, v_max = df['SDC Rate'].min(), df['SDC Rate'].max()
     t_min, t_max = df['Time interval'].min(), df['Time interval'].max()
 
-    # 区间计算逻辑 (与之前相同)
-    v_bins_list = []
-    if v_min < 10:
-        fine_bins = np.arange(v_min, 10, v_step).tolist()
+    # ==========================================
+    # 【核心修改】：SDC Rate 区间生成算法 (%)
+    # ==========================================
+    v_bins_list = [v_min] # 确保以真实最小值开头
+    
+    # 1. 小于 10% 的部分，受滑动条动态控制
+    if v_min < 10.0:
+        fine_bins = np.arange(v_min, 10.0, v_step).tolist()
         v_bins_list.extend(fine_bins)
-        v_bins_list.append(10.0) 
-        if v_max > 10:
-            max_bound = np.ceil(v_max / 5.0) * 5.0
-            v_bins_list.extend(np.arange(15.0, max_bound + 5.0, 5.0).tolist())
-    else:
-        v_bins_list.append(v_min)
-        next_5 = np.ceil(v_min / 5.0) * 5.0
-        if next_5 == v_min: next_5 += 5.0
-        if v_max > v_min:
-            max_bound = np.ceil(v_max / 5.0) * 5.0
-            v_bins_list.extend(np.arange(next_5, max_bound + 5.0, 5.0).tolist())
+        
+    # 2. 10% 以上的部分，严格按照用户指定的固定区间
+    fixed_bounds = [10.0, 15.0, 20.0, 30.0, 40.0]
+    
+    # 防御性编程：如果数据中有大于 40% 的极值，按 10 的步长自动向后延伸
+    if v_max > 40.0:
+        curr_bound = 50.0
+        while curr_bound <= v_max + 10.0:
+            fixed_bounds.append(curr_bound)
+            curr_bound += 10.0
             
-    v_bins = np.unique(np.round(v_bins_list, 5)).tolist()
-    t_bins = np.arange(t_min, t_max + t_step, t_step)
+    # 将符合条件的固定边界加入列表
+    for b in fixed_bounds:
+        if b > v_min:
+            v_bins_list.append(b)
+            
+    # 去重并排序，生成最终的 SDC Rate 切割点
+    v_bins = sorted(list(set(np.round(v_bins_list, 5))))
 
-    # 安全限制，防止网页卡死
+    # --- 时间区间（向上取整） ---
+    t_start = np.floor(t_min)
+    t_end = np.ceil(t_max)
+    t_bins = np.arange(t_start, t_end + t_step, t_step)
+
+    # 安全限制
     if len(v_bins) > 80 or len(t_bins) > 80:
         st.error("⚠️ 步长太小导致生成的网格过多，请在左侧调大步长！")
     else:
@@ -54,7 +67,7 @@ if uploaded_file is not None:
         df['T_bin'] = pd.cut(df['Time interval'], bins=t_bins, include_lowest=True)
         ct = pd.crosstab(df['V_bin'], df['T_bin'], margins=True, margins_name='Total', dropna=False)
 
-        x_labels = [f"{i.left:.1f} ~ {i.right:.1f}" if str(i) != 'Total' else 'Total' for i in ct.columns]
+        x_labels = [f"{i.left:.0f} ~ {i.right:.0f}" if str(i) != 'Total' else 'Total' for i in ct.columns]
         y_labels = [f"{i.left:.2f} ~ {i.right:.2f}" if str(i) != 'Total' else 'Total' for i in ct.index]
 
         color_matrix = np.zeros(ct.shape)
@@ -70,8 +83,11 @@ if uploaded_file is not None:
                 if pd.isna(val): val = 0
                 pct = (val / total_count) * 100 if total_count > 0 else 0
                 
-                text_row.append("" if val == 0 else f"<b>{int(val)}</b><br><span style='font-size:10px'>({pct:.1f}%)</span>")
-                hover_row.append(f"<b>SDC Rate:</b> {y_labels[i]}<br><b>Time:</b> {x_labels[j]}<br><b>Count:</b> {int(val)} ({pct:.1f}%)")
+                cell_text = "" if val == 0 else f"<span style='font-size:16px'><b>{int(val)}</b></span><br><span style='font-size:12px'>({pct:.1f}%)</span>"
+                text_row.append(cell_text)
+                
+                # 悬浮提示文案修改，去除 V 改为 %
+                hover_row.append(f"<b>SDC Rate (%):</b> {y_labels[i]}<br><b>Time:</b> {x_labels[j]}<br><b>Count:</b> {int(val)} ({pct:.1f}%)")
                 
                 color_matrix[i, j] = 0 if (i == rows - 1 or j == cols - 1) else val
 
@@ -88,11 +104,14 @@ if uploaded_file is not None:
         ))
 
         fig.update_layout(
-            xaxis_title="Time Interval (s)", yaxis_title="SDC Rate (V)",
-            xaxis=dict(tickangle=-45), height=700, margin=dict(l=50, r=50, t=50, b=50)
+            xaxis_title="<b>Time Interval (s)</b>", 
+            yaxis_title="<b>SDC Rate (%)</b>",  # Y轴标题修改为 %
+            xaxis=dict(tickangle=-45, tickfont=dict(size=13)), 
+            yaxis=dict(tickfont=dict(size=13)),                
+            height=750, 
+            margin=dict(l=50, r=50, t=50, b=50)
         )
 
-        # 在网页中渲染图表
         st.success(f"✅ 数据加载成功！共包含 {total_count} 条有效数据。")
         st.plotly_chart(fig, use_container_width=True)
 else:
