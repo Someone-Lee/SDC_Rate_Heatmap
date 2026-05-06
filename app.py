@@ -50,7 +50,7 @@ if uploaded_file is not None:
             v_bins_list.extend(fine_bins)
             
         # 2. 10% 以上的部分，严格按照固定区间
-        fixed_bounds = [10.0, 15.0, 20.0, 30.0, 40.0]
+        fixed_bounds = [10.0, 25.0, 40.0]
         if v_max > 40.0:
             curr_bound = 50.0
             while curr_bound <= v_max + 10.0:
